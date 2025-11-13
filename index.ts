@@ -17,6 +17,12 @@ import { swagger, type ElysiaSwaggerConfig } from '@elysiajs/swagger';
 import { cors } from '@elysiajs/cors';
 
 //! TYPES
+type OpenApiDetailMetadata = { summary: string; description: string; tags?: string[] }
+type OpenApiResponseMetadata = { [key: number]: TSchema }
+type OpenApiMetadata = {
+  detail: OpenApiDetailMetadata;
+  response: OpenApiResponseMetadata;
+};
 type IHttpException = { message: string; status: number };
 type ClassLike = new (...args: any[]) => any;
 type ModuleProps = { controllers: ClassLike[] };
@@ -33,21 +39,24 @@ type ElysiaCreateOptions<T> = {
 };
 type HttpMethods = 'get' | 'post' | 'put' | 'delete' | 'patch';
 type HttpMethodMetadataSetterProps = {
-	path: string;
-	method: HttpMethods;
-	handler: Handler;
-	controllerClass: ClassLike;
+  path: string;
+  method: HttpMethods;
+  handler: Handler;
+  controllerClass: ClassLike;
+  openapi?: OpenApiMetadata;
 };
 type Metadata = {
-	path: string;
-	method: HttpMethods;
-	handler: (...args: unknown[]) => unknown;
-	bodySchema?: { schema?: TSchema; index: number };
-	querySchema?: { schema?: TSchema; index: number };
-	paramSlug?: { slug: string; index: number };
-	rawContext?: { index: number };
-	isPublic?: true;
-	customDecorators: { handler: Handler; index: number }[];
+  path: string;
+  method: HttpMethods;
+  handler: (...args: unknown[]) => unknown;
+  bodySchema?: { schema?: TSchema; index: number };
+  querySchema?: { schema?: TSchema; index: number };
+  paramSlug?: { slug: string; index: number };
+  rawContext?: { index: number };
+  isPublic?: true;
+  detailSchema?: OpenApiDetailMetadata
+  responseSchema?: OpenApiResponseMetadata;
+  customDecorators: { handler: Handler; index: number }[];
 };
 type WS = ElysiaWS;
 type CORSConfig = {
@@ -204,7 +213,7 @@ const httpMethodMetadataSetter = (props: HttpMethodMetadataSetterProps) => {
 	const customDecorators = Reflect.getMetadata('customDecorators', props.handler) || [];
 	const isPublic = Reflect.getMetadata('public', props.handler);
 
-	const { method, handler, controllerClass } = props;
+	const { method, handler, controllerClass, openapi } = props;
 	const metadata: Metadata[] = Reflect.getMetadata('metadata', controllerClass) || [];
 	const path = props.path.startsWith('/') ? props.path : `/${props.path}`;
 	metadata.push({
@@ -216,6 +225,8 @@ const httpMethodMetadataSetter = (props: HttpMethodMetadataSetterProps) => {
 		customDecorators,
 		rawContext,
 		isPublic,
+    detailSchema: openapi?.detail,
+    responseSchema: openapi?.response,
 		handler: handler as any,
 	});
 	Reflect.defineMetadata('metadata', metadata, controllerClass);
@@ -295,6 +306,12 @@ const Controller = (prefix: string) => {
 					return async (c: Context) => bondedHandler(...(await getParameters(c)));
 				};
 
+        const getDetail = () => {
+          if (eachMetadata.detailSchema) return eachMetadata.detailSchema
+          if (!options?.auth || eachMetadata.isPublic) return { security: [] }
+          return { security: [{ BearerAuth: [] }] }
+        }
+
 				app.route(eachMetadata.method, prefix + eachMetadata.path, getHandler(), {
 					afterHandle: isGenerator ? undefined : afterHandle,
 					beforeHandle: eachMetadata.isPublic ? undefined : beforeHandle,
@@ -302,10 +319,8 @@ const Controller = (prefix: string) => {
 					tags: [tag],
 					body: eachMetadata.bodySchema?.schema,
 					query: eachMetadata.querySchema?.schema as any,
-					detail:
-						!options?.auth || eachMetadata.isPublic
-							? { security: [] }
-							: { security: [{ BearerAuth: [] }] },
+          detail: getDetail(),
+          response: eachMetadata.responseSchema
 				});
 
 				LoggerService('RouterExplorer').log(
@@ -391,7 +406,8 @@ const ApiTag = (tag: string) => {
 		Reflect.defineMetadata('tag', tag, target);
 	};
 };
-const Get = (path = '/'): MethodDecorator => {
+
+const Get = (path = '/', openapi?: OpenApiMetadata): MethodDecorator => {
 	return (target, _, desc: PropertyDescriptor) => {
 		process.nextTick(() =>
 			httpMethodMetadataSetter({
@@ -399,11 +415,12 @@ const Get = (path = '/'): MethodDecorator => {
 				path,
 				method: 'get',
 				handler: desc.value,
+        openapi
 			}),
 		);
 	};
 };
-const Post = (path = '/'): MethodDecorator => {
+const Post = (path = '/', openapi?: OpenApiMetadata): MethodDecorator => {
 	return (target, _, desc: PropertyDescriptor) => {
 		process.nextTick(() =>
 			httpMethodMetadataSetter({
@@ -411,11 +428,12 @@ const Post = (path = '/'): MethodDecorator => {
 				path,
 				method: 'post',
 				handler: desc.value,
+        openapi
 			}),
 		);
 	};
 };
-const Put = (path = '/'): MethodDecorator => {
+const Put = (path = '/', openapi?: OpenApiMetadata): MethodDecorator => {
 	return (target, _, desc: PropertyDescriptor) => {
 		process.nextTick(() =>
 			httpMethodMetadataSetter({
@@ -423,11 +441,12 @@ const Put = (path = '/'): MethodDecorator => {
 				path,
 				method: 'put',
 				handler: desc.value,
+        openapi
 			}),
 		);
 	};
 };
-const Delete = (path = '/'): MethodDecorator => {
+const Delete = (path = '/', openapi?: OpenApiMetadata): MethodDecorator => {
 	return (target, _, desc: PropertyDescriptor) => {
 		process.nextTick(() =>
 			httpMethodMetadataSetter({
@@ -435,18 +454,20 @@ const Delete = (path = '/'): MethodDecorator => {
 				path,
 				method: 'delete',
 				handler: desc.value,
+        openapi
 			}),
 		);
 	};
 };
-const Patch = (path = '/'): MethodDecorator => {
-	return (target, propertyKey, desc: PropertyDescriptor) => {
+const Patch = (path = '/', openapi?: OpenApiMetadata): MethodDecorator => {
+	return (target, _, desc: PropertyDescriptor) => {
 		process.nextTick(() =>
 			httpMethodMetadataSetter({
 				controllerClass: target.constructor as ClassLike,
 				path,
 				method: 'patch',
 				handler: desc.value,
+        openapi
 			}),
 		);
 	};
