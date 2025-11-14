@@ -1,3 +1,7 @@
 {
-  "cSpell.words": ["Ateeb", "elysiajs"]
+  "cSpell.words": ["Ateeb", "elysiajs"],
+  "editor.formatOnSave": true,
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }
