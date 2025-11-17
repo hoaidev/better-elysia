@@ -199,6 +199,23 @@ const ElysiaFactory = {
   },
 }
 
+const beforeHandle = (c: Context) => {
+  if ("jwt" in c) {
+    const jwt = c.jwt as { verify: (token: string) => unknown }
+    const token = c.request.headers.get("Authorization")
+    if (!token) {
+      c.set.status = 401
+      return { message: "Unauthorized" }
+    }
+    try {
+      jwt.verify(token)
+    } catch (error) {
+      c.set.status = 401
+      return { message: "Unauthorized" }
+    }
+  }
+}
+
 //! DECORATORS
 const ServicesMap = new Map<string, any>()
 const nextTick = () => new Promise((resolve) => process.nextTick(resolve))
@@ -246,7 +263,6 @@ const Controller = (prefix: string) => {
 
       await nextTick()
       const tag: string = Reflect.getMetadata("tag", target) ?? "default"
-      const beforeHandle = options?.auth || ((c: Context) => {})
       const afterHandle = options?.response || ((c: Context) => {})
 
       const services = (Reflect.getMetadata("design:paramtypes", target) || []).map((EachService: ClassLike) => {
