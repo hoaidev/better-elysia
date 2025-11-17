@@ -13,7 +13,8 @@ import {
   type TSchema,
 } from "elysia"
 import type { ElysiaWS } from "elysia/ws"
-import { swagger, type ElysiaSwaggerConfig } from "@elysiajs/swagger"
+import { jwt, type JWTOption } from "@elysiajs/jwt"
+import { openapi, type ElysiaOpenAPIConfig } from "@elysiajs/openapi"
 import { cors } from "@elysiajs/cors"
 
 //! TYPES
@@ -30,12 +31,13 @@ type fc = (...args: any[]) => any
 type Origin = string | RegExp | ((request: Request) => boolean | undefined)
 type ElysiaCreateOptions<T> = {
   cors?: boolean | CORSConfig
-  swagger?: boolean | ElysiaSwaggerConfig<T extends string ? T : string>
   auth?: Handler
   response?: AfterHandler
   error?: ErrorHandler<any, any>
   plugins?: ((app: Elysia) => Elysia)[]
   beforeStart?: fc[]
+  jwtSetting?: JWTOption
+  openapiSetting?: ElysiaOpenAPIConfig
 }
 type HttpMethods = "get" | "post" | "put" | "delete" | "patch"
 type HttpMethodMetadataSetterProps = {
@@ -53,11 +55,13 @@ type Metadata = {
   querySchema?: { schema?: TSchema; index: number }
   paramSlug?: { slug: string; index: number }
   rawContext?: { index: number }
+  appContext?: { index: number }
   isPublic?: true
   detailSchema?: OpenApiDetailMetadata
   responseSchema?: OpenApiResponseMetadata
   customDecorators: { handler: Handler; index: number }[]
 }
+
 type WS = ElysiaWS
 type CORSConfig = {
   aot?: boolean
@@ -69,7 +73,7 @@ type CORSConfig = {
   maxAge?: number
   preflight?: boolean
 }
-export type { ElysiaSwaggerConfig, Context, TSchema, ErrorHandler, AfterHandler, Handler, CORSConfig, WS }
+export type { Context, TSchema, ErrorHandler, AfterHandler, Handler, CORSConfig, WS }
 
 //! LOGGER SERVICE
 function createLogger(serviceName = "ElysiaApplication") {
@@ -157,9 +161,14 @@ const ElysiaFactory = {
 
     if (options?.plugins) for (const plugin of options.plugins) app.use(plugin)
 
-    // SWAGGER SETTING
-    if (options?.swagger) {
-      app.use(swagger(typeof options.swagger === "object" ? options.swagger : {}))
+    // Open API SETTING
+    if (options?.openapiSetting) {
+      app.use(openapi(options.openapiSetting))
+    }
+
+    // JWT SETTING
+    if (options?.jwtSetting) {
+      app.use(jwt(options.jwtSetting))
     }
 
     if (options?.error) {
@@ -186,6 +195,7 @@ const ElysiaFactory = {
       })
     }
 
+    // TODO create new decorator can access whole app context. This decorator can be accessed in all controller methods
     return injectedAppWithControllers
   },
 }
@@ -257,6 +267,9 @@ const Controller = (prefix: string) => {
           const parameters = [] as any
           if (eachMetadata.rawContext) {
             parameters[eachMetadata.rawContext.index] = c
+          }
+          if (eachMetadata.appContext) {
+            parameters[eachMetadata.appContext.index] = c
           }
           if (eachMetadata.bodySchema) {
             parameters[eachMetadata.bodySchema.index] = c.body
@@ -460,7 +473,7 @@ const Public = (): MethodDecorator => {
   }
 }
 
-const RawContext = () => {
+const AppContext = () => {
   return (target: any, propertyKey: string, parameterIndex: number) => {
     Reflect.defineMetadata("rawContext", { index: parameterIndex }, target[propertyKey])
   }
@@ -689,7 +702,7 @@ export {
   Delete,
   Patch,
   Public,
-  RawContext,
+  AppContext,
   Body,
   Param,
   Query,
