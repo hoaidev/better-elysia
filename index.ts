@@ -16,6 +16,7 @@ import type { ElysiaWS } from "elysia/ws"
 import { jwt, type JWTOption } from "@elysiajs/jwt"
 import { openapi, type ElysiaOpenAPIConfig } from "@elysiajs/openapi"
 import { cors } from "@elysiajs/cors"
+import { CommonResponseSchema } from "./response"
 
 //! TYPES
 type OpenApiDetailMetadata = { summary: string; description: string; tags?: string[] }
@@ -199,19 +200,24 @@ const ElysiaFactory = {
   },
 }
 
+const UNAUTHORIZED_MESSAGE: typeof CommonResponseSchema.Unauthorized.static = {
+  message: "Unauthorized",
+  success: false,
+}
+
 const beforeHandle = (c: Context) => {
   if ("jwt" in c) {
     const jwt = c.jwt as { verify: (token: string) => unknown }
     const token = c.request.headers.get("Authorization")
     if (!token) {
       c.set.status = 401
-      return { message: "Unauthorized" }
+      return UNAUTHORIZED_MESSAGE
     }
     try {
       jwt.verify(token)
     } catch (error) {
       c.set.status = 401
-      return { message: "Unauthorized" }
+      return UNAUTHORIZED_MESSAGE
     }
   }
 }
@@ -330,7 +336,9 @@ const Controller = (prefix: string) => {
           body: eachMetadata.bodySchema?.schema,
           query: eachMetadata.querySchema?.schema as any,
           detail: getDetail(),
-          response: eachMetadata.responseSchema,
+          response: eachMetadata.isPublic
+            ? eachMetadata.responseSchema
+            : { ...eachMetadata.responseSchema, 401: CommonResponseSchema.Unauthorized },
         })
 
         LoggerService("RouterExplorer").log(`Mapped {${eachMetadata.path}, ${eachMetadata.method.toUpperCase()}} route`)
@@ -719,5 +727,6 @@ export {
   Param,
   Query,
   Service,
+  CommonResponseSchema,
   ElysiaFactory,
 }
