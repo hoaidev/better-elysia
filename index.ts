@@ -1,9 +1,12 @@
 import "reflect-metadata"
 
-import colors from "colors"
+import { cors } from "@elysiajs/cors"
+import { jwt, type JWTOption } from "@elysiajs/jwt"
+import { openapi, type ElysiaOpenAPIConfig } from "@elysiajs/openapi"
+import { default as colors } from "colors"
 import {
-  t,
   Elysia,
+  t,
   type AfterHandler,
   type Context,
   type ErrorHandler,
@@ -13,9 +16,6 @@ import {
   type TSchema,
 } from "elysia"
 import type { ElysiaWS } from "elysia/ws"
-import { jwt, type JWTOption } from "@elysiajs/jwt"
-import { openapi, type ElysiaOpenAPIConfig } from "@elysiajs/openapi"
-import { cors } from "@elysiajs/cors"
 import { CommonResponseSchema } from "./response"
 
 //! TYPES
@@ -73,7 +73,15 @@ type CORSConfig = {
   maxAge?: number
   preflight?: boolean
 }
-export type { Context, TSchema, ErrorHandler, AfterHandler, Handler, CORSConfig, WS }
+
+// Types
+type JwtPayload = {
+  id?: string
+  email?: string
+  role?: string
+  iat?: number
+  exp?: number
+}
 
 //! LOGGER SERVICE
 function createLogger(serviceName = "ElysiaApplication") {
@@ -135,7 +143,7 @@ LoggerService.error = singletonLogger.error
 LoggerService.debug = singletonLogger.debug
 
 //! CREATE DECORATOR
-const createCustomParameterDecorator = (handler: Handler) => {
+const customDecorators = (handler: Handler) => {
   return (target: any, propertyKey: string, parameterIndex: number) => {
     const customDecorators = Reflect.getMetadata("customDecorators", target[propertyKey]) || []
     customDecorators.push({ handler, index: parameterIndex })
@@ -195,7 +203,6 @@ const ElysiaFactory = {
       })
     }
 
-    // TODO create new decorator can access whole app context. This decorator can be accessed in all controller methods
     return injectedAppWithControllers
   },
 }
@@ -205,16 +212,22 @@ const UNAUTHORIZED_MESSAGE: typeof CommonResponseSchema.Unauthorized.static = {
   success: false,
 }
 
-const beforeHandle = (c: Context) => {
+const beforeHandle = async (c: Context & { store: { user?: JwtPayload } }) => {
   if ("jwt" in c) {
-    const jwt = c.jwt as { verify: (token: string) => unknown }
+    const jwt = c.jwt as { verify: (token: string) => Promise<unknown> }
     const token = c.request.headers.get("Authorization")
     if (!token) {
       c.set.status = 401
       return UNAUTHORIZED_MESSAGE
     }
     try {
-      jwt.verify(token)
+      const jwtVerifyResult = await jwt.verify(token)
+      if (!jwtVerifyResult) {
+        c.set.status = 401
+        return UNAUTHORIZED_MESSAGE
+      }
+
+      c.store.user = jwtVerifyResult
     } catch (error) {
       c.set.status = 401
       return UNAUTHORIZED_MESSAGE
@@ -705,28 +718,29 @@ export class MethodNotAllowedException extends HttpException {
 //! EXPORTS
 export * from "elysia"
 export {
-  t,
-  HttpStatus,
-  LoggerService,
-  createCustomParameterDecorator,
-  Module,
-  Controller,
   ApiTag,
-  Websocket,
-  Open,
-  Close,
-  Message,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Patch,
-  Public,
   AppContext,
   Body,
+  Close,
+  CommonResponseSchema,
+  Controller,
+  customDecorators,
+  Delete,
+  ElysiaFactory,
+  Get,
+  HttpStatus,
+  LoggerService,
+  Message,
+  Module,
+  Open,
   Param,
+  Patch,
+  Post,
+  Public,
+  Put,
   Query,
   Service,
-  CommonResponseSchema,
-  ElysiaFactory,
+  t,
+  Websocket,
 }
+export type { AfterHandler, Context, CORSConfig, ErrorHandler, Handler, TSchema, WS }
