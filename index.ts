@@ -54,7 +54,6 @@ type Metadata = {
   bodySchema?: { schema?: TSchema; index: number }
   querySchema?: { schema?: TSchema; index: number }
   paramSlug?: { slug: string; index: number }
-  rawContext?: { index: number }
   appContext?: { index: number }
   isPublic?: true
   detailSchema?: OpenApiDetailMetadata
@@ -207,7 +206,7 @@ const httpMethodMetadataSetter = (props: HttpMethodMetadataSetterProps) => {
   const bodySchema = Reflect.getMetadata("body", props.handler)
   const paramSlug = Reflect.getMetadata("param", props.handler)
   const querySchema = Reflect.getMetadata("query", props.handler)
-  const rawContext = Reflect.getMetadata("rawContext", props.handler)
+  const appContext = Reflect.getMetadata("appContext", props.handler)
   const customDecorators = Reflect.getMetadata("customDecorators", props.handler) || []
   const isPublic = Reflect.getMetadata("public", props.handler)
 
@@ -221,7 +220,7 @@ const httpMethodMetadataSetter = (props: HttpMethodMetadataSetterProps) => {
     paramSlug,
     querySchema,
     customDecorators,
-    rawContext,
+    appContext,
     isPublic,
     detailSchema: openapi?.detail,
     responseSchema: openapi?.response,
@@ -265,9 +264,6 @@ const Controller = (prefix: string) => {
       for (const eachMetadata of metadata) {
         const getParameters = async (c: Context): Promise<any[]> => {
           const parameters = [] as any
-          if (eachMetadata.rawContext) {
-            parameters[eachMetadata.rawContext.index] = c
-          }
           if (eachMetadata.appContext) {
             parameters[eachMetadata.appContext.index] = c
           }
@@ -475,7 +471,7 @@ const Public = (): MethodDecorator => {
 
 const AppContext = () => {
   return (target: any, propertyKey: string, parameterIndex: number) => {
-    Reflect.defineMetadata("rawContext", { index: parameterIndex }, target[propertyKey])
+    Reflect.defineMetadata("appContext", { index: parameterIndex }, target[propertyKey])
   }
 }
 
