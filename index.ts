@@ -16,6 +16,7 @@ import {
   type TSchema,
 } from "elysia"
 import type { ElysiaWS } from "elysia/ws"
+import { onHandleAuthentication, type JwtPayload } from "./authentication"
 import { CommonResponseSchema } from "./response"
 
 //! TYPES
@@ -60,6 +61,7 @@ type Metadata = {
   detailSchema?: OpenApiDetailMetadata
   responseSchema?: OpenApiResponseMetadata
   customDecorators: { handler: Handler; index: number }[]
+  roles?: string[]
 }
 
 type WS = ElysiaWS
@@ -72,15 +74,6 @@ type CORSConfig = {
   credentials?: boolean
   maxAge?: number
   preflight?: boolean
-}
-
-// Types
-type JwtPayload = {
-  id?: string
-  email?: string
-  role?: string
-  iat?: number
-  exp?: number
 }
 
 //! LOGGER SERVICE
@@ -207,34 +200,6 @@ const ElysiaFactory = {
   },
 }
 
-const UNAUTHORIZED_MESSAGE: typeof CommonResponseSchema.Unauthorized.static = {
-  message: "Unauthorized",
-  success: false,
-}
-
-const beforeHandle = async (c: Context & { store: { user?: JwtPayload } }) => {
-  if ("jwt" in c) {
-    const jwt = c.jwt as { verify: (token: string) => Promise<unknown> }
-    const token = c.request.headers.get("Authorization")
-    if (!token) {
-      c.set.status = 401
-      return UNAUTHORIZED_MESSAGE
-    }
-    try {
-      const jwtVerifyResult = await jwt.verify(token)
-      if (!jwtVerifyResult) {
-        c.set.status = 401
-        return UNAUTHORIZED_MESSAGE
-      }
-
-      c.store.user = jwtVerifyResult
-    } catch (error) {
-      c.set.status = 401
-      return UNAUTHORIZED_MESSAGE
-    }
-  }
-}
-
 //! DECORATORS
 const ServicesMap = new Map<string, any>()
 const nextTick = () => new Promise((resolve) => process.nextTick(resolve))
@@ -245,6 +210,7 @@ const httpMethodMetadataSetter = (props: HttpMethodMetadataSetterProps) => {
   const appContext = Reflect.getMetadata("appContext", props.handler)
   const customDecorators = Reflect.getMetadata("customDecorators", props.handler) || []
   const isPublic = Reflect.getMetadata("public", props.handler)
+  const roles = Reflect.getMetadata("roles", props.handler)
 
   const { method, handler, controllerClass, openapi } = props
   const metadata: Metadata[] = Reflect.getMetadata("metadata", controllerClass) || []
@@ -261,6 +227,7 @@ const httpMethodMetadataSetter = (props: HttpMethodMetadataSetterProps) => {
     detailSchema: openapi?.detail,
     responseSchema: openapi?.response,
     handler: handler as any,
+    roles,
   })
   Reflect.defineMetadata("metadata", metadata, controllerClass)
 }
@@ -311,13 +278,13 @@ const Controller = (prefix: string) => {
           if (eachMetadata.paramSlug) {
             parameters[eachMetadata.paramSlug.index] = c.params?.[eachMetadata.paramSlug.slug]
           }
-
           if (eachMetadata.customDecorators) {
             for (const eachCustomDecorator of eachMetadata.customDecorators) {
               parameters[eachCustomDecorator.index] = await eachCustomDecorator.handler(c)
             }
           }
 
+          console.log("parameters", parameters)
           return parameters
         }
         const bondedHandler = eachMetadata.handler.bind(controller)
@@ -343,7 +310,7 @@ const Controller = (prefix: string) => {
 
         app.route(eachMetadata.method, prefix + eachMetadata.path, getHandler(), {
           afterHandle: isGenerator ? undefined : afterHandle,
-          beforeHandle: eachMetadata.isPublic ? undefined : beforeHandle,
+          beforeHandle: eachMetadata.isPublic ? undefined : onHandleAuthentication(eachMetadata.roles),
           config: {},
           tags: [tag],
           body: eachMetadata.bodySchema?.schema,
@@ -351,7 +318,12 @@ const Controller = (prefix: string) => {
           detail: getDetail(),
           response: eachMetadata.isPublic
             ? eachMetadata.responseSchema
-            : { ...eachMetadata.responseSchema, 401: CommonResponseSchema.Unauthorized },
+            : {
+                ...eachMetadata.responseSchema,
+                401: CommonResponseSchema.Unauthorized,
+                403: CommonResponseSchema.Forbidden,
+                500: CommonResponseSchema.InternalServerError,
+              },
         })
 
         LoggerService("RouterExplorer").log(`Mapped {${eachMetadata.path}, ${eachMetadata.method.toUpperCase()}} route`)
@@ -503,6 +475,12 @@ const Patch = (path = "/", openapi?: OpenApiMetadata): MethodDecorator => {
 const Public = (): MethodDecorator => {
   return (_, __, desc: PropertyDescriptor) => {
     Reflect.defineMetadata("public", true, desc.value)
+  }
+}
+
+const Roles = (roles: string[]) => {
+  return (target: any, propertyKey: string) => {
+    Reflect.defineMetadata("roles", roles, target[propertyKey])
   }
 }
 
@@ -739,8 +717,9 @@ export {
   Public,
   Put,
   Query,
+  Roles,
   Service,
   t,
   Websocket,
 }
-export type { AfterHandler, Context, CORSConfig, ErrorHandler, Handler, TSchema, WS }
+export type { AfterHandler, Context, CORSConfig, ErrorHandler, Handler, JwtPayload, TSchema, WS }

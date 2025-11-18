@@ -10,6 +10,10 @@ export namespace CommonResponseSchema {
     success: t.Boolean({ default: false }),
     message: t.String({ default: "Unauthorized" }),
   })
+  export const Forbidden = t.Object({
+    success: t.Boolean({ default: false }),
+    message: t.String({ default: "Forbidden" }),
+  })
   export const BadRequest = t.Object({
     success: t.Boolean({ default: false }),
     message: t.String({ default: "Bad request" }),
