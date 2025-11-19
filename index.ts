@@ -18,6 +18,7 @@ import {
 import type { ElysiaWS } from "elysia/ws"
 import { onHandleAuthentication, type JwtPayload } from "./authentication"
 import { CommonResponseSchema } from "./response"
+import { cacheProvider } from "./caching"
 
 //! TYPES
 type OpenApiDetailMetadata = { summary: string; description: string; tags?: string[] }
@@ -249,7 +250,13 @@ const Controller = (prefix: string) => {
 
       await nextTick()
       const tag: string = Reflect.getMetadata("tag", target) ?? "default"
-      const afterHandle = options?.response || ((c: Context) => {})
+      const afterHandle = (c: Context & { responseValue: unknown }) => {
+        if (c.request.method.toLowerCase() === "get") {
+          // handle internal cache
+          cacheProvider.set(c.request.url, c.responseValue)
+        }
+        if (options?.response) return options.response(c as any)
+      }
 
       const services = (Reflect.getMetadata("design:paramtypes", target) || []).map((EachService: ClassLike) => {
         const instance = ServicesMap.get(EachService.name)
@@ -284,7 +291,6 @@ const Controller = (prefix: string) => {
             }
           }
 
-          console.log("parameters", parameters)
           return parameters
         }
         const bondedHandler = eachMetadata.handler.bind(controller)
@@ -294,12 +300,19 @@ const Controller = (prefix: string) => {
             return async function* (c: Context) {
               try {
                 for await (const eachValue of bondedHandler(...(await getParameters(c))) as any[]) yield eachValue
-              } catch (error: any) {
+              } catch (error: unknown) {
                 yield error
               }
             }
           }
-          return async (c: Context) => bondedHandler(...(await getParameters(c)))
+          return async (c: Context) => {
+            if (c.request.method.toLowerCase() === "get") {
+              // check data in cache provider and return if any
+              const data = await cacheProvider.get(c.request.url)
+              if (data) return data
+            }
+            return bondedHandler(...(await getParameters(c)))
+          }
         }
 
         const getDetail = () => {
