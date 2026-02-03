@@ -41,6 +41,7 @@ type ElysiaCreateOptions<T> = {
   beforeStart?: fc[]
   jwtSetting?: JWTOption
   openapiSetting?: ElysiaOpenAPIConfig
+  timing?: boolean
 }
 type HttpMethods = "get" | "post" | "put" | "delete" | "patch"
 type HttpMethodMetadataSetterProps = {
@@ -75,6 +76,12 @@ type CORSConfig = {
   credentials?: boolean
   maxAge?: number
   preflight?: boolean
+}
+
+type AuthContext = Context & {
+  store: {
+    user?: { id: string }
+  }
 }
 
 //! LOGGER SERVICE
@@ -171,6 +178,21 @@ const ElysiaFactory = {
     // JWT SETTING
     if (options?.jwtSetting) {
       app.use(jwt(options.jwtSetting))
+    }
+
+    // TIMING
+    if (options?.timing) {
+      app.onRequest((ctx: { store: { startTime?: number } }) => {
+        ctx.store.startTime = performance.now()
+      })
+      app.onAfterHandle(({ request, store, set }) => {
+        const { startTime } = store as { startTime?: number }
+        if (!startTime) return
+
+        const duration = performance.now() - startTime
+        set.headers["X-Response-Time"] = `${duration.toFixed(2)}ms`
+        logger.log(`${request.method} ${new URL(request.url).pathname} - ${duration.toFixed(2)}ms`)
+      })
     }
 
     if (options?.error) {
@@ -309,7 +331,7 @@ const Controller = (prefix: string) => {
             if (c.request.method.toLowerCase() === "get") {
               // check data in cache provider and return if any
               const data = await cacheProvider.get(c.request.url)
-              if (data) return data
+              if (data) return JSON.parse(data)
             }
             return bondedHandler(...(await getParameters(c)))
           }
@@ -735,4 +757,4 @@ export {
   t,
   Websocket,
 }
-export type { AfterHandler, Context, CORSConfig, ErrorHandler, Handler, JwtPayload, TSchema, WS }
+export type { AfterHandler, AuthContext, Context, CORSConfig, ErrorHandler, Handler, JwtPayload, TSchema, WS }
