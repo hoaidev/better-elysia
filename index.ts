@@ -41,7 +41,6 @@ type ElysiaCreateOptions<T> = {
   beforeStart?: fc[]
   jwtSetting?: JWTOption
   openapiSetting?: ElysiaOpenAPIConfig
-  timing?: boolean
 }
 type HttpMethods = "get" | "post" | "put" | "delete" | "patch"
 type HttpMethodMetadataSetterProps = {
@@ -180,20 +179,20 @@ const ElysiaFactory = {
       app.use(jwt(options.jwtSetting))
     }
 
-    // TIMING
-    if (options?.timing) {
-      app.onRequest((ctx: { store: { startTime?: number } }) => {
-        ctx.store.startTime = performance.now()
-      })
-      app.onAfterHandle(({ request, store, set }) => {
-        const { startTime } = store as { startTime?: number }
-        if (!startTime) return
+    // LOGGING
+    app.onRequest((ctx: { store: { startTime?: number } }) => {
+      ctx.store.startTime = performance.now()
+    })
+    app.onAfterHandle(({ request, store, set, server }) => {
+      const { startTime } = store as { startTime?: number }
+      if (!startTime) return
 
-        const duration = performance.now() - startTime
-        set.headers["X-Response-Time"] = `${duration.toFixed(2)}ms`
-        logger.log(`${request.method} ${new URL(request.url).pathname} - ${duration.toFixed(2)}ms`)
-      })
-    }
+      const ip =
+        request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? server?.requestIP(request)?.address ?? "unknown"
+      const duration = `${(performance.now() - startTime).toFixed(2)}ms`
+      set.headers["X-Response-Time"] = duration
+      logger.log(`${ip} - ${request.method} ${new URL(request.url).pathname} - ${duration} - ${set.status}`)
+    })
 
     if (options?.error) {
       app.onError(options.error)
