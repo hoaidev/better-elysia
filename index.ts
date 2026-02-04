@@ -79,7 +79,7 @@ type CORSConfig = {
 
 type AuthContext = Context & {
   store: {
-    user?: { id: string }
+    user?: { id: string; userType: string; companyId?: string }
   }
 }
 
