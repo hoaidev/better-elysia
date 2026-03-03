@@ -83,6 +83,8 @@ type AuthContext = Context & {
   }
 }
 
+type TestAuthContext = Pick<AuthContext, "store" | "set" | "params" | "request">
+
 //! LOGGER SERVICE
 function createLogger(serviceName = "ElysiaApplication") {
   function messageParser(message: unknown) {
@@ -756,4 +758,17 @@ export {
   t,
   Websocket,
 }
-export type { AfterHandler, AuthContext, Context, CORSConfig, ErrorHandler, Handler, JwtPayload, TSchema, WS }
+export type {
+  AfterHandler,
+  AuthContext,
+  Context,
+  CORSConfig,
+  ErrorHandler,
+  Handler,
+  JwtPayload,
+  TestAuthContext,
+  TSchema,
+  WS,
+}
+
+export * from "./testing"
