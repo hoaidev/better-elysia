@@ -17,8 +17,8 @@ import {
 } from "elysia"
 import type { ElysiaWS } from "elysia/ws"
 import { onHandleAuthentication, type JwtPayload } from "./authentication"
-import { CommonResponseSchema } from "./response"
 import { cacheProvider } from "./caching"
+import { CommonResponseSchema } from "./response"
 
 //! TYPES
 type OpenApiDetailMetadata = { summary: string; description: string; tags?: string[] }
@@ -199,6 +199,9 @@ const ElysiaFactory = {
     if (options?.error) {
       app.onError(options.error)
     }
+
+    // Resolve all service dependencies before wiring controllers
+    resolveServices()
 
     const controllers: ClassLike[] | undefined = Reflect.getMetadata("controllers", module)
     if (!controllers) {
@@ -544,14 +547,50 @@ const Query = (schema?: TSchema) => {
   }
 }
 
+const PendingServices = new Map<string, ClassLike>()
+
+const resolveServices = () => {
+  const resolving = new Set<string>()
+
+  function resolve(target: ClassLike) {
+    const name = target.name
+    if (ServicesMap.has(name)) return ServicesMap.get(name)
+
+    if (resolving.has(name)) {
+      console.error(`Circular dependency detected: ${[...resolving, name].join(" -> ")}`)
+      process.exit(-1)
+    }
+    resolving.add(name)
+
+    const deps = (Reflect.getMetadata("design:paramtypes", target) || []).map((Dep: ClassLike) => {
+      const pending = PendingServices.get(Dep.name)
+      if (!pending) {
+        console.error(`Service ${Dep.name} not found (required by ${name})`)
+        console.error("Make sure it has @Service() decorator")
+        process.exit(-1)
+      }
+      return resolve(pending)
+    })
+
+    resolving.delete(name)
+    const instance = new target(...deps)
+    ServicesMap.set(name, instance)
+    return instance
+  }
+
+  for (const [, target] of PendingServices) {
+    if (!ServicesMap.has(target.name)) resolve(target)
+  }
+}
+
 const Service = () => {
   return (target: ClassLike) => {
     const classname = target.name
-    if (ServicesMap.has(classname)) {
-      console.error(`Service ${classname} already exists`)
+    if (PendingServices.has(classname)) {
+      console.error(`Service ${classname} already registered`)
       process.exit(-1)
     }
-    ServicesMap.set(classname, new target())
+    PendingServices.set(classname, target)
   }
 }
 
