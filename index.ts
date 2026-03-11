@@ -278,8 +278,13 @@ const Controller = (prefix: string) => {
       const tag: string = Reflect.getMetadata("tag", target) ?? "default"
       const afterHandle = (c: Context & { responseValue: unknown }) => {
         if (c.request.method.toLowerCase() === "get") {
-          // handle internal cache
-          cacheProvider.set(c.request.url, c.responseValue)
+          // Only cache successful responses — error responses (e.g. 401 from
+          // auth middleware) must not be cached because the next request with
+          // valid credentials would receive the stale error.
+          const status = typeof c.set.status === "number" ? c.set.status : 200
+          if (status >= 200 && status < 300) {
+            cacheProvider.set(c.request.url, c.responseValue)
+          }
         }
         if (options?.response) return options.response(c as any)
       }
@@ -332,8 +337,10 @@ const Controller = (prefix: string) => {
             }
           }
           return async (c: Context) => {
-            if (c.request.method.toLowerCase() === "get") {
-              // check data in cache provider and return if any
+            if (eachMetadata.isPublic && c.request.method.toLowerCase() === "get") {
+              // Only serve cached responses for public routes — authenticated
+              // routes return user-specific data so the URL alone is not a
+              // valid cache key.
               const data = await cacheProvider.get(c.request.url)
               if (data) return JSON.parse(data)
             }
