@@ -32,7 +32,7 @@ type ClassLike = new (...args: any[]) => any
 type ModuleProps = { controllers: ClassLike[] }
 type fc = (...args: any[]) => any
 type Origin = string | RegExp | ((request: Request) => boolean | undefined)
-type ElysiaCreateOptions<T> = {
+type ElysiaCreateOptions = {
   cors?: boolean | CORSConfig
   auth?: Handler
   response?: AfterHandler
@@ -155,7 +155,7 @@ const customDecorators = (handler: Handler) => {
 
 //! Elysia Factory
 const ElysiaFactory = {
-  create: async <T extends string>(module: ClassLike, options?: ElysiaCreateOptions<T>): Promise<Elysia> => {
+  create: async (module: ClassLike, options?: ElysiaCreateOptions): Promise<Elysia> => {
     const app = new Elysia()
     const logger = LoggerService("ElysiaFactory")
     logger.log("Starting elysia application")
